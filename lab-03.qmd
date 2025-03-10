@@ -1,5 +1,6 @@
 ---
 title: "lab-03"
+output_dir: "docs"
 subtitle: ESS330
 author:
   - name: Mel Balcarcel Arias
