@@ -3,24 +3,30 @@ title: "lab-03"
 subtitle: ESS330
 author:
   - name: Mel
-    email: 
-format: html
+date: "9 March 2025"
+format:
+  html:
+    self-contained: true
+execute: 
+  echo: true
+
 ---
 
 ```{r}
 library(zoo)
 library(flextable)
 library(tidyverse)
+library(lubridate)
 ```
 
-##Question 2
-#part 1 
+**Question 2**
+part 1 
 ```{r}
 library(tidyverse)
 url = "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv"
 covid_data = read_csv(url)
 ```
-#part 2 
+part 2 
 ```{r}
 txt <- "2022-02-01"
 class(txt)
@@ -31,7 +37,7 @@ class(date_example)
 my.date <- as.Date("2022-02-01")
 my.state <- "Colorado"
 ```
-#part 3
+part 3
 ```{r}
 colorado <- covid_data %>% 
   filter(state == my.state) %>% 
@@ -41,7 +47,7 @@ colorado <- covid_data %>%
          new_deaths = deaths -lag(deaths)) %>% 
   ungroup()
 ```
-#part 4
+part 4
 ```{r}
 filter(colorado, date == my.date) %>% 
   slice_max(cases, n = 5) %>% 
@@ -56,20 +62,190 @@ filter(colorado, date == my.date) %>%
   set_caption(caption = "Most New Cases")
 ```
 
-##Question 3 
+**Question 3** 
 
 ```{r}
 library(tidyverse)
 url = "https://www2.census.gov/programs-surveys/popest/datasets/2020-2023/counties/totals/co-est2023-alldata.csv"
 pop_data = read_csv(url)
 ```
-#part 1 
+part 1 
 ```{r}
 library(tidyverse)
 pop_url <- 'https://www2.census.gov/programs-surveys/popest/datasets/2020-2023/counties/totals/co-est2023-alldata.csv'
-
-pop_url %>% 
-  select(contains(NAME, 2021))
+population <- read.csv(pop_url) %>% 
+  filter(COUNTY != 0) %>% 
+  mutate(fips = paste0(sprintf("%02d", STATE), sprintf("%03d", COUNTY))) %>% 
+  select(fips, contains('NAME'), contains('2021'))
 ```
+part 2 
+```{r}
+glimpse(population)
+#The population data has been reduced from 67 variables to 19 to only account for the ones in 2021. The population and the covid data set both have state and counties.
+```
+part 3 
+```{r}
+range(population$POPESTIMATE2021)
+```
+part 4 
+```{r}
+percap = inner_join(colorado, select(population, fips, population = POPESTIMATE2021), 
+                    by = 'fips') %>% 
+  filter(date == my.date) %>% 
+  mutate(cumPercap = cases / population,
+         newCasesPercap = new_cases / population, 
+         newDeathsPercap = new_deaths / population)
+```
+part 5 
+```{r}
+percap %>% 
+  select(County = county , Cases = cumPercap) %>% 
+  slice_max(Cases, n = 5) %>% 
+  flextable() %>% 
+  set_caption("5 Counties With Most Cumulative Cases Per Capita")
+percap %>% 
+  select(County = county, Cases = newCasesPercap) %>% 
+  slice_max(Cases, n = 5) %>% 
+  flextable() %>% 
+  set_caption("5 Counties With Most New Cases Per Capita")
+```
+**Question 4** 
+```{r}
+past14 <- population %>% 
+  inner_join(colorado, by = "fips") %>% 
+  filter(between(date,my.date - 13, my.date)) %>% 
+  group_by(county) %>% 
+  summarise(lag = sum(new_cases) / (POPESTIMATE2021[1]/100000)) %>% 
+  ungroup()
+past14 %>% 
+  select(County = county, Cases = lag) %>% 
+  slice_max(Cases, n = 5) %>% 
+  flextable() %>% 
+  set_caption("Top Five Counties with more than 100 cases per 100,000 over the last 14 days")
+```
+**Question 5**
+```{r}
+deathToll <- colorado %>% 
+  mutate(year = lubridate::year(date)) %>% 
+  filter(year == 2021) %>% 
+  group_by(fips) %>% 
+  summarise(deaths = sum(new_deaths, na.rm = TRUE)) %>% 
+  left_join(population, by = c("fips")) %>% 
+  mutate(death_ratio = 100 * (deaths / DEATHS2021)) %>% 
+  select(CTYNAME, deaths, DEATHS2021, death_ratio) %>% 
+  filter(death_ratio > 20)
+
+ggplot(deathToll, aes(x = reorder(CTYNAME, -death_ratio), y = death_ratio)) + 
+  geom_col(fill = "steelblue") + 
+  coord_flip() +
+  theme_light() + 
+  labs(
+    title = "Counties with Death Ratio Over 20% (2021)",
+    x = "County",
+    y = "Death Ratio (%)"
+  )
+```
+**Question 6**
+part 1
+```{r}
+multi_state <- covid_data %>%
+  filter(state %in% c("New York", "Colorado", "Alabama", "Ohio")) %>%
+  group_by(state, date) %>%
+  summarise(cases = sum(cases, na.rm = TRUE)) %>%
+  arrange(state, date) %>%
+  mutate(daily_new_cases = cases - lag(cases)) %>%
+  mutate(rolling_avg = zoo::rollmean(daily_new_cases, k = 7, fill = NA, align = "right")) %>%
+  ungroup()
+```
+part 2 
+```{r}
+ggplot(multi_state, aes(x = date)) + 
+  geom_col(aes(y = daily_new_cases), fill = "lightblue", col = NA) +
+  geom_line(aes(y = rolling_avg), col = "darkblue", size = 1) +
+  theme_linedraw() +
+  facet_wrap(~state, nrow = 2, scales = "free") +
+  labs(title = "7 Day Covid-19 Rolling Mean", x = "Date", y = "Case Count")
+```
+part 3 
+```{r}
+pcapq6 = population %>% 
+  group_by(STNAME) %>% 
+  summarise(state_pop = sum(POPESTIMATE2021)) %>% 
+  inner_join(multi_state, by = c("STNAME"="state")) %>% 
+  mutate(PerCap = daily_new_cases / state_pop) %>% 
+  group_by(STNAME) %>% 
+  mutate(roller = rollmean(PerCap, k = 7, align = "right", fill = NA)) %>% 
+  ungroup()
+```
+part 4 
+```{r}
+ggplot(pcapq6, aes(x = date, y = roller, color = STNAME)) +
+  geom_line(size = 1) +
+  labs(
+    title = "7-Day Rolling Averages of COVID-19 Cases Per Capita by State", 
+    x = "Date", 
+    y = "Cases Per Capita (7-Day Rolling Average)",
+    color = "State"
+  ) +
+  scale_color_manual(values = c("New York" = "blue", "Colorado" = "green", "Alabama" = "red", "Ohio" = "yellow")) + 
+  theme_dark() +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+part 5
+```{r}
+#State populations can vary widely so comparing solely based on population can make the data look a lot worse for certain states. However, when you do per capita, the analysis can be applied more broadly and put the state analysis on even ground.
+```
+**Question 7**
+```{r}
+county = 'https://raw.githubusercontent.com/mikejohnson51/csu-ess-330/refs/heads/main/resources/county-centroids.csv'
+county_centroids <- read.csv(county) %>% 
+  mutate(fips = as.character(fips)) %>%
+  left_join(covid_data, by = "fips") %>%
+  arrange(fips, date) %>%
+  group_by(fips) %>%
+  mutate(daily_new_cases = cases - lag(cases, default = 0)) %>%
+  group_by(date) %>%
+  summarise(weighted_meanx = sum(LON * daily_new_cases) / sum(daily_new_cases),
+            weighted_meany = sum(LAT * daily_new_cases) / sum(daily_new_cases), 
+            total_cases = sum(daily_new_cases), 
+            .groups = 'drop') %>%
+  mutate(month = month(date)) %>%
+  arrange(date)
+
+ggplot(county_centroids) + 
+  borders("state", fill = "gray90", colour = "white") +
+  geom_point(aes(x = weighted_meanx, y = weighted_meany, 
+                 size = total_cases, color = factor(month)), 
+             alpha = 0.7) +
+  scale_size_continuous(name = "Total Cases") + 
+  scale_color_viridis_d(name = "Month", option = "D") +
+  theme_linedraw() +
+  labs(title = "Weighted Mean Center of COVID-19 Cases",
+       x = "Longitude",
+       y = "Latitude") +
+  theme(legend.position = "right") 
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
