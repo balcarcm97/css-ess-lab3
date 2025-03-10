@@ -2,7 +2,7 @@
 title: "lab-03"
 subtitle: ESS330
 author:
-  - name: Mel
+  - name: Mel Balcarcel Arias
 date: "9 March 2025"
 format:
   html:
@@ -228,7 +228,7 @@ ggplot(county_centroids) +
        x = "Longitude",
        y = "Latitude") +
   theme(legend.position = "right") 
-
+#During the pandemic I heard that the outbreak was particularly bad around the West Virginia area so this map seems to accurately represent that. It also seems that the earlier months have a higher concentration because covid cases dropped as time went on with vaccine development and a deeper understanding of the virus. 
 ```
 
 
